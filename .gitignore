@@ -1,1 +1,4 @@
 build
+test_out.*
+test
+test_out

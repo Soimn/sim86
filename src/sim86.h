@@ -33,7 +33,7 @@ ReadByte(Memory* memory, u32 address)
 u16
 ReadWord(Memory* memory, u32 address)
 {
-  return ((u16)ReadByte(memory, address) << 8) | ReadByte(memory, address + 1);
+  return ((u16)ReadByte(memory, address + 1) << 8) | ReadByte(memory, address);
 }
 
 typedef u8 Register_Kind;
@@ -178,7 +178,7 @@ enum
   InstructionPrefix_SegCS = (1 << 2),
   InstructionPrefix_SegSS = (1 << 3),
   InstructionPrefix_SegDS = (1 << 4),
-  InstructionPrefix_Rep   = (1 << 5),
+  InstructionPrefix_RepNZ = (1 << 5),
   InstructionPrefix_RepZ  = (1 << 6),
 };
 
@@ -230,7 +230,6 @@ enum
   InstructionOperandFormat_RegImmed,
   InstructionOperandFormat_Immed,
   InstructionOperandFormat_RMV,
-  InstructionOperandFormat_SourceTable,
   InstructionOperandFormat_OpcodeSource,
   InstructionOperandFormat_NearProc,
 };
@@ -270,32 +269,32 @@ Instruction_Details InstructionDetailsFromFirstByte[256] = {
   [0x01] = INSTRUCTION_DETAIL(Instruction_Add,    InstructionFlag_W,                     InstructionOperandFormat_RMRM),
   [0x02] = INSTRUCTION_DETAIL(Instruction_Add,    InstructionFlag_D,                     InstructionOperandFormat_RMRM),
   [0x03] = INSTRUCTION_DETAIL(Instruction_Add,    InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_RMRM),
-  [0x04] = INSTRUCTION_DETAIL(Instruction_Add,    0,                                     InstructionOperandFormat_AccImmed),
-  [0x05] = INSTRUCTION_DETAIL(Instruction_Add,    InstructionFlag_W,                     InstructionOperandFormat_AccImmed),
+  [0x04] = INSTRUCTION_DETAIL(Instruction_Add,    InstructionFlag_D,                     InstructionOperandFormat_AccImmed),
+  [0x05] = INSTRUCTION_DETAIL(Instruction_Add,    InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_AccImmed),
   [0x06] = INSTRUCTION_DETAIL(Instruction_Push,   0,                                     InstructionOperandFormat_ES),
   [0x07] = INSTRUCTION_DETAIL(Instruction_Pop,    0,                                     InstructionOperandFormat_ES),
   [0x08] = INSTRUCTION_DETAIL(Instruction_Or,     0,                                     InstructionOperandFormat_RMRM),
   [0x09] = INSTRUCTION_DETAIL(Instruction_Or,     InstructionFlag_W,                     InstructionOperandFormat_RMRM),
   [0x0A] = INSTRUCTION_DETAIL(Instruction_Or,     InstructionFlag_D,                     InstructionOperandFormat_RMRM),
   [0x0B] = INSTRUCTION_DETAIL(Instruction_Or,     InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_RMRM),
-  [0x0C] = INSTRUCTION_DETAIL(Instruction_Or,     0,                                     InstructionOperandFormat_AccImmed),
-  [0x0D] = INSTRUCTION_DETAIL(Instruction_Or,     InstructionFlag_W,                     InstructionOperandFormat_AccImmed),
+  [0x0C] = INSTRUCTION_DETAIL(Instruction_Or,     InstructionFlag_D,                     InstructionOperandFormat_AccImmed),
+  [0x0D] = INSTRUCTION_DETAIL(Instruction_Or,     InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_AccImmed),
   [0x0E] = INSTRUCTION_DETAIL(Instruction_Push,   0,                                     InstructionOperandFormat_CS),
 
   [0x10] = INSTRUCTION_DETAIL(Instruction_Adc,    0,                                     InstructionOperandFormat_RMRM),
   [0x11] = INSTRUCTION_DETAIL(Instruction_Adc,    InstructionFlag_W,                     InstructionOperandFormat_RMRM),
   [0x12] = INSTRUCTION_DETAIL(Instruction_Adc,    InstructionFlag_D,                     InstructionOperandFormat_RMRM),
   [0x13] = INSTRUCTION_DETAIL(Instruction_Adc,    InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_RMRM),
-  [0x14] = INSTRUCTION_DETAIL(Instruction_Adc,    0,                                     InstructionOperandFormat_AccImmed),
-  [0x15] = INSTRUCTION_DETAIL(Instruction_Adc,    InstructionFlag_W,                     InstructionOperandFormat_AccImmed),
+  [0x14] = INSTRUCTION_DETAIL(Instruction_Adc,    InstructionFlag_D,                     InstructionOperandFormat_AccImmed),
+  [0x15] = INSTRUCTION_DETAIL(Instruction_Adc,    InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_AccImmed),
   [0x16] = INSTRUCTION_DETAIL(Instruction_Push,   0,                                     InstructionOperandFormat_SS),
   [0x17] = INSTRUCTION_DETAIL(Instruction_Pop,    0,                                     InstructionOperandFormat_SS),
   [0x18] = INSTRUCTION_DETAIL(Instruction_Sbb,    0,                                     InstructionOperandFormat_RMRM),
   [0x19] = INSTRUCTION_DETAIL(Instruction_Sbb,    InstructionFlag_W,                     InstructionOperandFormat_RMRM),
   [0x1A] = INSTRUCTION_DETAIL(Instruction_Sbb,    InstructionFlag_D,                     InstructionOperandFormat_RMRM),
   [0x1B] = INSTRUCTION_DETAIL(Instruction_Sbb,    InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_RMRM),
-  [0x1C] = INSTRUCTION_DETAIL(Instruction_Sbb,    0,                                     InstructionOperandFormat_AccImmed),
-  [0x1D] = INSTRUCTION_DETAIL(Instruction_Sbb,    InstructionFlag_W,                     InstructionOperandFormat_AccImmed),
+  [0x1C] = INSTRUCTION_DETAIL(Instruction_Sbb,    InstructionFlag_D,                     InstructionOperandFormat_AccImmed),
+  [0x1D] = INSTRUCTION_DETAIL(Instruction_Sbb,    InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_AccImmed),
   [0x1E] = INSTRUCTION_DETAIL(Instruction_Push,   0,                                     InstructionOperandFormat_DS),
   [0x1F] = INSTRUCTION_DETAIL(Instruction_Pop,    0,                                     InstructionOperandFormat_DS),
 
@@ -303,16 +302,16 @@ Instruction_Details InstructionDetailsFromFirstByte[256] = {
   [0x21] = INSTRUCTION_DETAIL(Instruction_And,    InstructionFlag_W,                     InstructionOperandFormat_RMRM),
   [0x22] = INSTRUCTION_DETAIL(Instruction_And,    InstructionFlag_D,                     InstructionOperandFormat_RMRM),
   [0x23] = INSTRUCTION_DETAIL(Instruction_And,    InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_RMRM),
-  [0x24] = INSTRUCTION_DETAIL(Instruction_And,    0,                                     InstructionOperandFormat_AccImmed),
-  [0x25] = INSTRUCTION_DETAIL(Instruction_And,    InstructionFlag_W,                     InstructionOperandFormat_AccImmed),
+  [0x24] = INSTRUCTION_DETAIL(Instruction_And,    InstructionFlag_D,                     InstructionOperandFormat_AccImmed),
+  [0x25] = INSTRUCTION_DETAIL(Instruction_And,    InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_AccImmed),
   [0x26] = {0},
   [0x27] = INSTRUCTION_DETAIL(Instruction_Daa,    0,                                     0),
   [0x28] = INSTRUCTION_DETAIL(Instruction_Sub,    0,                                     InstructionOperandFormat_RMRM),
   [0x29] = INSTRUCTION_DETAIL(Instruction_Sub,    InstructionFlag_W,                     InstructionOperandFormat_RMRM),
   [0x2A] = INSTRUCTION_DETAIL(Instruction_Sub,    InstructionFlag_D,                     InstructionOperandFormat_RMRM),
   [0x2B] = INSTRUCTION_DETAIL(Instruction_Sub,    InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_RMRM),
-  [0x2C] = INSTRUCTION_DETAIL(Instruction_Sub,    0,                                     InstructionOperandFormat_AccImmed),
-  [0x2D] = INSTRUCTION_DETAIL(Instruction_Sub,    InstructionFlag_W,                     InstructionOperandFormat_AccImmed),
+  [0x2C] = INSTRUCTION_DETAIL(Instruction_Sub,    InstructionFlag_D,                     InstructionOperandFormat_AccImmed),
+  [0x2D] = INSTRUCTION_DETAIL(Instruction_Sub,    InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_AccImmed),
   [0x2E] = {0},
   [0x2F] = INSTRUCTION_DETAIL(Instruction_Das,    0,                                     0),
 
@@ -320,16 +319,16 @@ Instruction_Details InstructionDetailsFromFirstByte[256] = {
   [0x31] = INSTRUCTION_DETAIL(Instruction_Xor,    InstructionFlag_W,                     InstructionOperandFormat_RMRM),
   [0x32] = INSTRUCTION_DETAIL(Instruction_Xor,    InstructionFlag_D,                     InstructionOperandFormat_RMRM),
   [0x33] = INSTRUCTION_DETAIL(Instruction_Xor,    InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_RMRM),
-  [0x34] = INSTRUCTION_DETAIL(Instruction_Xor,    0,                                     InstructionOperandFormat_AccImmed),
-  [0x35] = INSTRUCTION_DETAIL(Instruction_Xor,    InstructionFlag_W,                     InstructionOperandFormat_AccImmed),
+  [0x34] = INSTRUCTION_DETAIL(Instruction_Xor,    InstructionFlag_D,                     InstructionOperandFormat_AccImmed),
+  [0x35] = INSTRUCTION_DETAIL(Instruction_Xor,    InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_AccImmed),
   [0x36] = {0},
   [0x37] = INSTRUCTION_DETAIL(Instruction_Aaa,    0,                                     0),
   [0x38] = INSTRUCTION_DETAIL(Instruction_Cmp,    0,                                     InstructionOperandFormat_RMRM),
   [0x39] = INSTRUCTION_DETAIL(Instruction_Cmp,    InstructionFlag_W,                     InstructionOperandFormat_RMRM),
   [0x3A] = INSTRUCTION_DETAIL(Instruction_Cmp,    InstructionFlag_D,                     InstructionOperandFormat_RMRM),
   [0x3B] = INSTRUCTION_DETAIL(Instruction_Cmp,    InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_RMRM),
-  [0x3C] = INSTRUCTION_DETAIL(Instruction_Cmp,    0,                                     InstructionOperandFormat_AccImmed),
-  [0x3D] = INSTRUCTION_DETAIL(Instruction_Cmp,    InstructionFlag_W,                     InstructionOperandFormat_AccImmed),
+  [0x3C] = INSTRUCTION_DETAIL(Instruction_Cmp,    InstructionFlag_D,                     InstructionOperandFormat_AccImmed),
+  [0x3D] = INSTRUCTION_DETAIL(Instruction_Cmp,    InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_AccImmed),
   [0x3E] = {0},
   [0x3F] = INSTRUCTION_DETAIL(Instruction_Aas,    0,                                     0),
 
@@ -407,8 +406,8 @@ Instruction_Details InstructionDetailsFromFirstByte[256] = {
   [0x83] = {0},
   [0x84] = INSTRUCTION_DETAIL(Instruction_Test,   0,                                     InstructionOperandFormat_RMRM),
   [0x85] = INSTRUCTION_DETAIL(Instruction_Test,   InstructionFlag_W,                     InstructionOperandFormat_RMRM),
-  [0x86] = INSTRUCTION_DETAIL(Instruction_Xchg,   0,                                     InstructionOperandFormat_RMRM),
-  [0x87] = INSTRUCTION_DETAIL(Instruction_Xchg,   InstructionFlag_W,                     InstructionOperandFormat_RMRM),
+  [0x86] = INSTRUCTION_DETAIL(Instruction_Xchg,   InstructionFlag_D,                     InstructionOperandFormat_RMRM),
+  [0x87] = INSTRUCTION_DETAIL(Instruction_Xchg,   InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_RMRM),
   [0x88] = INSTRUCTION_DETAIL(Instruction_Mov,    0,                                     InstructionOperandFormat_RMRM),
   [0x89] = INSTRUCTION_DETAIL(Instruction_Mov,    InstructionFlag_W,                     InstructionOperandFormat_RMRM),
   [0x8A] = INSTRUCTION_DETAIL(Instruction_Mov,    InstructionFlag_D,                     InstructionOperandFormat_RMRM),
@@ -435,16 +434,16 @@ Instruction_Details InstructionDetailsFromFirstByte[256] = {
   [0x9E] = INSTRUCTION_DETAIL(Instruction_Sahf,   0,                                     0),
   [0x9F] = INSTRUCTION_DETAIL(Instruction_Lahf,   0,                                     0),
 
-  [0xA0] = INSTRUCTION_DETAIL(Instruction_Mov,    0,                                     InstructionOperandFormat_AccMem),
-  [0xA1] = INSTRUCTION_DETAIL(Instruction_Mov,    InstructionFlag_W,                     InstructionOperandFormat_AccMem),
-  [0xA2] = INSTRUCTION_DETAIL(Instruction_Mov,    InstructionFlag_D,                     InstructionOperandFormat_AccMem),
-  [0xA3] = INSTRUCTION_DETAIL(Instruction_Mov,    InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_AccMem),
+  [0xA0] = INSTRUCTION_DETAIL(Instruction_Mov,    InstructionFlag_D,                     InstructionOperandFormat_AccMem),
+  [0xA1] = INSTRUCTION_DETAIL(Instruction_Mov,    InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_AccMem),
+  [0xA2] = INSTRUCTION_DETAIL(Instruction_Mov,    0,                                     InstructionOperandFormat_AccMem),
+  [0xA3] = INSTRUCTION_DETAIL(Instruction_Mov,    InstructionFlag_W,                     InstructionOperandFormat_AccMem),
   [0xA4] = INSTRUCTION_DETAIL(Instruction_Movs,   0,                                     InstructionOperandFormat_DstStrSrcStr),
   [0xA5] = INSTRUCTION_DETAIL(Instruction_Movs,   InstructionFlag_W,                     InstructionOperandFormat_DstStrSrcStr),
   [0xA6] = INSTRUCTION_DETAIL(Instruction_Cmps,   0,                                     InstructionOperandFormat_DstStrSrcStr),
   [0xA7] = INSTRUCTION_DETAIL(Instruction_Cmps,   InstructionFlag_W,                     InstructionOperandFormat_DstStrSrcStr),
-  [0xA8] = INSTRUCTION_DETAIL(Instruction_Test,   0,                                     InstructionOperandFormat_AccImmed),
-  [0xA9] = INSTRUCTION_DETAIL(Instruction_Test,   InstructionFlag_W,                     InstructionOperandFormat_AccImmed),
+  [0xA8] = INSTRUCTION_DETAIL(Instruction_Test,   InstructionFlag_D,                     InstructionOperandFormat_AccImmed),
+  [0xA9] = INSTRUCTION_DETAIL(Instruction_Test,   InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_AccImmed),
   [0xAA] = INSTRUCTION_DETAIL(Instruction_Stos,   0,                                     InstructionOperandFormat_DstStr),
   [0xAB] = INSTRUCTION_DETAIL(Instruction_Stos,   InstructionFlag_W,                     InstructionOperandFormat_DstStr),
   [0xAC] = INSTRUCTION_DETAIL(Instruction_Lods,   0,                                     InstructionOperandFormat_SrcStr),
@@ -475,8 +474,8 @@ Instruction_Details InstructionDetailsFromFirstByte[256] = {
   [0xC3] = INSTRUCTION_DETAIL(Instruction_Ret,    0,                                     0),
   [0xC4] = INSTRUCTION_DETAIL(Instruction_Les,    InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_RegMem),
   [0xC5] = INSTRUCTION_DETAIL(Instruction_Lds,    InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_RegMem),
-  [0xC6] = INSTRUCTION_DETAIL(Instruction_Mov,    InstructionFlag_W,                     0),
-  [0xC7] = INSTRUCTION_DETAIL(Instruction_Mov,    InstructionFlag_W,                     0),
+  [0xC6] = INSTRUCTION_DETAIL(Instruction_Mov,    0,                                     InstructionOperandFormat_RMImmed),
+  [0xC7] = INSTRUCTION_DETAIL(Instruction_Mov,    InstructionFlag_W,                     InstructionOperandFormat_RMImmed),
   [0xC8] = {0},
   [0xC9] = {0},
   [0xCA] = INSTRUCTION_DETAIL(Instruction_Ret,    0,                                     0),
@@ -493,7 +492,7 @@ Instruction_Details InstructionDetailsFromFirstByte[256] = {
   [0xD4] = INSTRUCTION_DETAIL(Instruction_Aam,    0,                                     0),
   [0xD5] = INSTRUCTION_DETAIL(Instruction_Aad,    0,                                     0),
   [0xD6] = {0},
-  [0xD7] = INSTRUCTION_DETAIL(Instruction_Xlat,   0,                                     InstructionOperandFormat_SourceTable),
+  [0xD7] = INSTRUCTION_DETAIL(Instruction_Xlat,   0,                                     0),
   [0xD8] = INSTRUCTION_DETAIL(Instruction_Esc,    0,                                     InstructionOperandFormat_OpcodeSource),
   [0xD9] = INSTRUCTION_DETAIL(Instruction_Esc,    0,                                     InstructionOperandFormat_OpcodeSource),
   [0xDA] = INSTRUCTION_DETAIL(Instruction_Esc,    0,                                     InstructionOperandFormat_OpcodeSource),
@@ -507,8 +506,8 @@ Instruction_Details InstructionDetailsFromFirstByte[256] = {
   [0xE1] = INSTRUCTION_DETAIL(Instruction_Loopz,  0,                                     InstructionOperandFormat_IpInc8),
   [0xE2] = INSTRUCTION_DETAIL(Instruction_Loop,   0,                                     InstructionOperandFormat_IpInc8),
   [0xE3] = INSTRUCTION_DETAIL(Instruction_Jcxz,   0,                                     InstructionOperandFormat_IpInc8),
-  [0xE4] = INSTRUCTION_DETAIL(Instruction_In,     0,                                     InstructionOperandFormat_AccImmed),
-  [0xE5] = INSTRUCTION_DETAIL(Instruction_In,     InstructionFlag_W,                     InstructionOperandFormat_AccImmed),
+  [0xE4] = INSTRUCTION_DETAIL(Instruction_In,     InstructionFlag_D,                     InstructionOperandFormat_AccImmed),
+  [0xE5] = INSTRUCTION_DETAIL(Instruction_In,     InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_AccImmed),
   [0xE6] = INSTRUCTION_DETAIL(Instruction_Out,    0,                                     InstructionOperandFormat_AccImmed),
   [0xE7] = INSTRUCTION_DETAIL(Instruction_Out,    InstructionFlag_W,                     InstructionOperandFormat_AccImmed),
   [0xE8] = INSTRUCTION_DETAIL(Instruction_Call,   0,                                     InstructionOperandFormat_NearProc),
@@ -517,8 +516,8 @@ Instruction_Details InstructionDetailsFromFirstByte[256] = {
   [0xEB] = INSTRUCTION_DETAIL(Instruction_Jmp,    0,                                     InstructionOperandFormat_IpInc8),
   [0xEC] = INSTRUCTION_DETAIL(Instruction_In,     0,                                     InstructionOperandFormat_AccDX),
   [0xED] = INSTRUCTION_DETAIL(Instruction_In,     InstructionFlag_W,                     InstructionOperandFormat_AccDX),
-  [0xEE] = INSTRUCTION_DETAIL(Instruction_Out,    0,                                     InstructionOperandFormat_AccDX),
-  [0xEF] = INSTRUCTION_DETAIL(Instruction_Out,    InstructionFlag_W,                     InstructionOperandFormat_AccDX),
+  [0xEE] = INSTRUCTION_DETAIL(Instruction_Out,    InstructionFlag_D,                     InstructionOperandFormat_AccDX),
+  [0xEF] = INSTRUCTION_DETAIL(Instruction_Out,    InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_AccDX),
 
   [0xF0] = {0},
   [0xF1] = {0},
@@ -557,25 +556,25 @@ DecodeInstruction(Memory* memory, u32* cursor)
     }
     else if ((first_byte & 0xFE) == 0xF2)
     {
-      instruction.prefix |= (first_byte == 0xF2 ? InstructionPrefix_Rep : InstructionPrefix_RepZ);
+      instruction.prefix |= (first_byte == 0xF2 ? InstructionPrefix_RepNZ : InstructionPrefix_RepZ);
       continue;
     }
-    else if ((first_byte & 0xF7) == 0x26)
+    else if ((first_byte & 0xE7) == 0x26)
     {
       Instruction_Prefix seg_prefixes[4] = {
         InstructionPrefix_SegES,
-        InstructionPrefix_SegSS,
         InstructionPrefix_SegCS,
+        InstructionPrefix_SegSS,
         InstructionPrefix_SegDS,
       };
 
-      instruction.prefix |= seg_prefixes[((first_byte & 0x10) >> 4) | (first_byte & 0x02)];
+      instruction.prefix |= seg_prefixes[(first_byte >> 3) & 0x3];
       continue;
     }
     else break;
   }
 
-  if ((first_byte & 0xFC) == 0x8C) // Immed
+  if ((first_byte & 0xFC) == 0x80) // Immed
   {
     u8 second_byte = ReadByte(memory, *cursor);
     *cursor += 1;
@@ -592,13 +591,13 @@ DecodeInstruction(Memory* memory, u32* cursor)
     };
 
     instruction.kind           = kind_from_op[(second_byte >> 3) & 0x7];
-    instruction.flags          = (first_byte & 0x1 ? InstructionFlag_W : 0);
+    instruction.flags          = (first_byte & 0x1 ? InstructionFlag_W : 0) | (first_byte & 0x2 ? InstructionFlag_S : 0);
     instruction.operand_format = InstructionOperandFormat_RMImmed;
 
     instruction.mod = second_byte >> 6;
     instruction.rm  = second_byte & 0x7;
   }
-  else if ((first_byte & 0xFC) == 0xDC) // Shift
+  else if ((first_byte & 0xFC) == 0xD0) // Shift
   {
     u8 second_byte = ReadByte(memory, *cursor);
     *cursor += 1;
@@ -638,8 +637,8 @@ DecodeInstruction(Memory* memory, u32* cursor)
     };
 
     u8 op = (second_byte >> 3) & 0x7;
-    instruction.kind           = kind_from_op[op];
-    instruction.flags          = (first_byte & 0x1 ? InstructionFlag_W : 0);
+    instruction.kind  = kind_from_op[op];
+    instruction.flags = (first_byte & 0x1 ? InstructionFlag_W : 0);
   
     if (op == 0)
     {
@@ -685,14 +684,28 @@ DecodeInstruction(Memory* memory, u32* cursor)
     instruction.flags          = details.flags;
     instruction.operand_format = details.operand_format;
 
-    if (instruction.operand_format == InstructionOperandFormat_RMRM ||
-        instruction.operand_format == InstructionOperandFormat_RMSegReg)
+    if (instruction.kind == Instruction_Aam || instruction.kind == Instruction_Aad)
+    {
+      *cursor += 1;
+    }
+    else if (instruction.operand_format == InstructionOperandFormat_RMRM     ||
+             instruction.operand_format == InstructionOperandFormat_RMSegReg ||
+             instruction.operand_format == InstructionOperandFormat_RegMem)
     {
       u8 second_byte = ReadByte(memory, *cursor);
       *cursor += 1;
 
       instruction.mod = second_byte >> 6;
       instruction.reg = (second_byte >> 3) & 0x7;
+      instruction.rm  = second_byte & 0x7;
+    }
+    else if (instruction.operand_format == InstructionOperandFormat_RMImmed ||
+             instruction.operand_format == InstructionOperandFormat_RM)
+    {
+      u8 second_byte = ReadByte(memory, *cursor);
+      *cursor += 1;
+
+      instruction.mod = second_byte >> 6;
       instruction.rm  = second_byte & 0x7;
     }
     else if (instruction.operand_format == InstructionOperandFormat_RegImmed)
@@ -716,6 +729,7 @@ DecodeInstruction(Memory* memory, u32* cursor)
       instruction.operand_format == InstructionOperandFormat_RMSegReg ||
       instruction.operand_format == InstructionOperandFormat_RM       ||
       instruction.operand_format == InstructionOperandFormat_RMV      ||
+      instruction.operand_format == InstructionOperandFormat_RegMem   ||
       instruction.operand_format == InstructionOperandFormat_OpcodeSource)
   {
     if (instruction.mod == 0 && instruction.rm == 6 || instruction.mod == 2)
@@ -725,8 +739,7 @@ DecodeInstruction(Memory* memory, u32* cursor)
     }
     else if (instruction.mod == 1)
     {
-      // TODO: Sign extend?
-      instruction.disp = ReadByte(memory, *cursor);
+      instruction.disp = (i16)(i8)ReadByte(memory, *cursor);
       *cursor += 1;
     }
   }
@@ -747,8 +760,7 @@ DecodeInstruction(Memory* memory, u32* cursor)
     *cursor += 2;
   }
 
-  if (instruction.operand_format == InstructionOperandFormat_AccImmed ||
-      instruction.operand_format == InstructionOperandFormat_RMImmed  ||
+  if (instruction.operand_format == InstructionOperandFormat_RMImmed  ||
       instruction.operand_format == InstructionOperandFormat_RegImmed ||
       instruction.operand_format == InstructionOperandFormat_Immed)
   {
@@ -767,6 +779,20 @@ DecodeInstruction(Memory* memory, u32* cursor)
     }
     else
     {
+      instruction.data = ReadByte(memory, *cursor);
+      *cursor += 1;
+    }
+  }
+  else if (instruction.operand_format == InstructionOperandFormat_AccImmed)
+  {
+    if (instruction.flags & InstructionFlag_W && !(instruction.kind == Instruction_In || instruction.kind == Instruction_Out))
+    {
+      instruction.data = ReadWord(memory, *cursor);
+      *cursor += 2;
+    }
+    else
+    {
+      // TODO: Sign extend?
       instruction.data = ReadByte(memory, *cursor);
       *cursor += 1;
     }
@@ -891,7 +917,7 @@ char* RegisterNames[REGISTER_COUNT] = {
 };
 
 void
-PrintInstruction__PrintMemoryRef(u8 mod, u8 rm, bool w, u16 disp, FILE* file)
+PrintInstruction__PrintMemoryRef(Instruction_Prefix prefix, u8 mod, u8 rm, bool w, u16 disp, FILE* file)
 {
   ASSERT(mod != 3);
 
@@ -906,6 +932,14 @@ PrintInstruction__PrintMemoryRef(u8 mod, u8 rm, bool w, u16 disp, FILE* file)
     "bx"
   };
 
+  switch (prefix)
+  {
+    case InstructionPrefix_SegES: fprintf(file, "es:"); break;
+    case InstructionPrefix_SegCS: fprintf(file, "cs:"); break;
+    case InstructionPrefix_SegSS: fprintf(file, "ss:"); break;
+    case InstructionPrefix_SegDS: fprintf(file, "ds:"); break;
+  }
+
   fprintf(file, "[");
 
   if (mod == 0)
@@ -913,7 +947,7 @@ PrintInstruction__PrintMemoryRef(u8 mod, u8 rm, bool w, u16 disp, FILE* file)
     if (rm == 6) fprintf(file, "%u", disp);
     else         fprintf(file, "%s", effective_address_patterns[rm]);
   }
-  else fprintf(file, "%s%+d", effective_address_patterns[rm], (i16)disp);
+  else fprintf(file, "%s%+d", effective_address_patterns[rm], (mod == 1 ? (int)(i8)disp : (int)(i16)disp));
 
   fprintf(file, "]");
 }
@@ -926,9 +960,9 @@ PrintInstruction(Instruction instruction, FILE* file)
     fprintf(file, "lock ");
   }
 
-  if (instruction.prefix & InstructionPrefix_Rep)
+  if (instruction.prefix & InstructionPrefix_RepNZ)
   {
-    fprintf(file, "rep ");
+    fprintf(file, "repnz ");
   }
 
   if (instruction.prefix & InstructionPrefix_RepZ)
@@ -937,8 +971,6 @@ PrintInstruction(Instruction instruction, FILE* file)
   }
   // TODO
   fprintf(file, InstructionNames[instruction.kind]);
-
-  fprintf(file, " ");
 
   bool w = instruction.flags & InstructionFlag_W;
   bool d = instruction.flags & InstructionFlag_D;
@@ -952,56 +984,82 @@ PrintInstruction(Instruction instruction, FILE* file)
     case InstructionOperandFormat_RMSegReg:
     case InstructionOperandFormat_RegMem:
     {
-      char* reg_name = RegisterNames[(instruction.operand_format == InstructionOperandFormat_RMRM ? RegisterFromRegW(instruction.reg, w) : RegisterFromSr(instruction.reg))];
+      char* reg_name = RegisterNames[instruction.operand_format == InstructionOperandFormat_RMSegReg ? RegisterFromSr(instruction.reg) : RegisterFromRegW(instruction.reg, w)];
 
-      if (instruction.mod == 3) fprintf(file, "%s, %s", reg_name, RegisterNames[RegisterFromRegW(instruction.reg, w)]);
+      if (instruction.mod == 3)
+      {
+        char* rm_reg_name = RegisterNames[RegisterFromRegW(instruction.rm, w)];
+        if (d) fprintf(file, " %s, %s", reg_name, rm_reg_name);
+        else   fprintf(file, " %s, %s", rm_reg_name, reg_name);
+      }
       else
       {
-        if (d) fprintf(file, "%s, ", reg_name);
+        if (d) fprintf(file, " %s, ", reg_name);
+        else   fprintf(file, " ");
 
-        PrintInstruction__PrintMemoryRef(instruction.mod, instruction.rm, w, instruction.disp, file);
+        PrintInstruction__PrintMemoryRef(instruction.prefix, instruction.mod, instruction.rm, w, instruction.disp, file);
 
         if (!d) fprintf(file, ", %s", reg_name);
       }
 
     } break;
 
+    case InstructionOperandFormat_RMV:
+    {
+      if (instruction.mod == 3) fprintf(file, " %s", RegisterNames[RegisterFromRegW(instruction.rm, w)]);
+      else
+      {
+        fprintf(file, " %s ", (w ? "word" : "byte"));
+        PrintInstruction__PrintMemoryRef(instruction.prefix, instruction.mod, instruction.rm, w, instruction.disp, file);
+      }
+
+      fprintf(file, ", %s", (v ? RegisterNames[Register_CL] : "1"));
+    } break;
+
     case InstructionOperandFormat_RegImmed:
     {
-      fprintf(file, "%s, %u", RegisterNames[RegisterFromRegW(instruction.reg, w)], instruction.data);
+      fprintf(file, " %s, %u", RegisterNames[RegisterFromRegW(instruction.reg, w)], instruction.data);
     } break;
 
     case InstructionOperandFormat_AccImmed:
     {
-      fprintf(file, "%s, %u", RegisterNames[w ? Register_AX : Register_AL], instruction.data);
+      char* acc_name = RegisterNames[w ? Register_AX : Register_AL];
+      if (d) fprintf(file, " %s, %u", acc_name, instruction.data);
+      else   fprintf(file, " %u, %s", instruction.data, acc_name);
     } break;
 
     case InstructionOperandFormat_Immed:
     {
-      fprintf(file, "%u", instruction.data);
+      fprintf(file, " %u", instruction.data);
     } break;
 
-    case InstructionOperandFormat_ES: fprintf(file, "%s", RegisterNames[Register_ES]); break;
-    case InstructionOperandFormat_CS: fprintf(file, "%s", RegisterNames[Register_CS]); break;
-    case InstructionOperandFormat_SS: fprintf(file, "%s", RegisterNames[Register_SS]); break;
-    case InstructionOperandFormat_DS: fprintf(file, "%s", RegisterNames[Register_DS]); break;
-    case InstructionOperandFormat_AX: fprintf(file, "%s", RegisterNames[Register_AX]); break;
-    case InstructionOperandFormat_CX: fprintf(file, "%s", RegisterNames[Register_CX]); break;
-    case InstructionOperandFormat_DX: fprintf(file, "%s", RegisterNames[Register_DX]); break;
-    case InstructionOperandFormat_BX: fprintf(file, "%s", RegisterNames[Register_BX]); break;
-    case InstructionOperandFormat_SP: fprintf(file, "%s", RegisterNames[Register_SP]); break;
-    case InstructionOperandFormat_BP: fprintf(file, "%s", RegisterNames[Register_BP]); break;
-    case InstructionOperandFormat_SI: fprintf(file, "%s", RegisterNames[Register_SI]); break;
-    case InstructionOperandFormat_DI: fprintf(file, "%s", RegisterNames[Register_DI]); break;
+    case InstructionOperandFormat_ES: fprintf(file, " %s", RegisterNames[Register_ES]); break;
+    case InstructionOperandFormat_CS: fprintf(file, " %s", RegisterNames[Register_CS]); break;
+    case InstructionOperandFormat_SS: fprintf(file, " %s", RegisterNames[Register_SS]); break;
+    case InstructionOperandFormat_DS: fprintf(file, " %s", RegisterNames[Register_DS]); break;
+    case InstructionOperandFormat_AX: fprintf(file, " %s", RegisterNames[Register_AX]); break;
+    case InstructionOperandFormat_CX: fprintf(file, " %s", RegisterNames[Register_CX]); break;
+    case InstructionOperandFormat_DX: fprintf(file, " %s", RegisterNames[Register_DX]); break;
+    case InstructionOperandFormat_BX: fprintf(file, " %s", RegisterNames[Register_BX]); break;
+    case InstructionOperandFormat_SP: fprintf(file, " %s", RegisterNames[Register_SP]); break;
+    case InstructionOperandFormat_BP: fprintf(file, " %s", RegisterNames[Register_BP]); break;
+    case InstructionOperandFormat_SI: fprintf(file, " %s", RegisterNames[Register_SI]); break;
+    case InstructionOperandFormat_DI: fprintf(file, " %s", RegisterNames[Register_DI]); break;
 
-    case InstructionOperandFormat_AccAX: fprintf(file, "%s, %s", RegisterNames[Register_AX], RegisterNames[Register_AX]);                   break;
-    case InstructionOperandFormat_AccCX: fprintf(file, "%s, %s", RegisterNames[Register_AX], RegisterNames[Register_CX]);                   break;
-    case InstructionOperandFormat_AccDX: fprintf(file, "%s, %s", RegisterNames[w ? Register_AX : Register_AL], RegisterNames[Register_DX]); break;
-    case InstructionOperandFormat_AccBX: fprintf(file, "%s, %s", RegisterNames[Register_AX], RegisterNames[Register_BX]);                   break;
-    case InstructionOperandFormat_AccSP: fprintf(file, "%s, %s", RegisterNames[Register_AX], RegisterNames[Register_SP]);                   break;
-    case InstructionOperandFormat_AccBP: fprintf(file, "%s, %s", RegisterNames[Register_AX], RegisterNames[Register_BP]);                   break;
-    case InstructionOperandFormat_AccSI: fprintf(file, "%s, %s", RegisterNames[Register_AX], RegisterNames[Register_SI]);                   break;
-    case InstructionOperandFormat_AccDI: fprintf(file, "%s, %s", RegisterNames[Register_AX], RegisterNames[Register_DI]);                   break;
+    case InstructionOperandFormat_AccAX:
+    case InstructionOperandFormat_AccCX:
+    case InstructionOperandFormat_AccDX:
+    case InstructionOperandFormat_AccBX:
+    case InstructionOperandFormat_AccSP:
+    case InstructionOperandFormat_AccBP:
+    case InstructionOperandFormat_AccSI:
+    case InstructionOperandFormat_AccDI:
+    {
+      char* acc_name = RegisterNames[w ? Register_AX : Register_AL];
+      char* aux_name = RegisterNames[(instruction.operand_format - InstructionOperandFormat_AccAX) + Register_AX];
+      if (d) fprintf(file, " %s, %s", aux_name, acc_name);
+      else   fprintf(file, " %s, %s", acc_name, aux_name);
+    } break;
 
     case InstructionOperandFormat_IpInc8:
     {
@@ -1020,50 +1078,40 @@ PrintInstruction(Instruction instruction, FILE* file)
 
     case InstructionOperandFormat_RMImmed:
     {
-      PrintInstruction__PrintMemoryRef(instruction.mod, instruction.rm, w, instruction.disp, file);
-      fprintf(file, ", %s %u", (w ? "word" : "byte"), instruction.data);
+      if (instruction.mod == 3) printf(" %s, %u", RegisterNames[RegisterFromRegW(instruction.rm, w)], instruction.data);
+      else
+      {
+        fprintf(file, " ");
+        PrintInstruction__PrintMemoryRef(instruction.prefix, instruction.mod, instruction.rm, w, instruction.disp, file);
+        fprintf(file, ", %s %u", (w ? "word" : "byte"), instruction.data);
+      }
     } break;
 
     case InstructionOperandFormat_RM:
     {
-      if (instruction.mod == 3) fprintf(file, "%s", RegisterNames[RegisterFromRegW(instruction.reg, w)]);
-      else                      PrintInstruction__PrintMemoryRef(instruction.mod, instruction.rm, w, instruction.disp, file);
+      if (instruction.mod == 3) fprintf(file, " %s", RegisterNames[RegisterFromRegW(instruction.rm, w)]);
+      else
+      {
+        fprintf(file, " %s ", (w ? "word" : "byte"));
+        PrintInstruction__PrintMemoryRef(instruction.prefix, instruction.mod, instruction.rm, w, instruction.disp, file);
+      }
     } break;
 
     case InstructionOperandFormat_AccMem:
     {
       char* reg_name = RegisterNames[w ? Register_AX : Register_AL];
 
-      if (d) printf("%s, ", reg_name);
+      if (d) printf(" %s, ", reg_name);
 
-      PrintInstruction__PrintMemoryRef(0, 6, w, instruction.disp, file);
+      PrintInstruction__PrintMemoryRef(instruction.prefix, 0, 6, w, instruction.disp, file);
 
       if (!d) printf(", %s", reg_name);
     } break;
 
-    case InstructionOperandFormat_DstStrSrcStr:
-    {
-      NOT_IMPLEMENTED;
-    } break;
-
     case InstructionOperandFormat_SrcStr:
-    {
-      NOT_IMPLEMENTED;
-    } break;
-
     case InstructionOperandFormat_DstStr:
-    {
-      NOT_IMPLEMENTED;
-    } break;
+    case InstructionOperandFormat_DstStrSrcStr: fprintf(file, "%c", (w ? 'w' : 'b')); break;
 
-    case InstructionOperandFormat_SourceTable:
-    {
-      NOT_IMPLEMENTED;
-    } break;
-
-    case InstructionOperandFormat_OpcodeSource:
-    {
-      NOT_IMPLEMENTED;
-    } break;
+    case InstructionOperandFormat_OpcodeSource: break;
   }
 }
