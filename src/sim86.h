@@ -36,6 +36,12 @@ ReadWord(Memory* memory, u32 address)
   return ((u16)ReadByte(memory, address + 1) << 8) | ReadByte(memory, address);
 }
 
+typedef struct CPU_State
+{
+  u16 register_file[REGISTER_COUNT];
+  u16 ip;
+} CPU_State;
+
 typedef u8 Register_Kind;
 enum
 {
