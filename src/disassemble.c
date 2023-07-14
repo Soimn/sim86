@@ -27,8 +27,9 @@ main(int argc, char** argv)
         printf("bits 16\n");
         for (u32 cursor = 0; cursor < file_size;)
         {
+          u32 address = cursor;
           Instruction instruction = DecodeInstruction(memory, &cursor);
-          PrintInstruction(instruction, stdout);
+          PrintInstruction(instruction, address, stdout);
           printf("\n");
         }
       }
