@@ -13,6 +13,8 @@ typedef int64_t i64;
 
 typedef u8 bool;
 
+typedef u64 uint;
+
 #define ASSERT(EX) ((EX) ? 1 : (*(volatile int*)0, 0))
 #define NOT_IMPLEMENTED ASSERT(!"NOT_IMPLEMENTED")
 
@@ -36,24 +38,10 @@ ReadWord(Memory* memory, u32 address)
   return ((u16)ReadByte(memory, address + 1) << 8) | ReadByte(memory, address);
 }
 
-typedef struct CPU_State
-{
-  u16 register_file[REGISTER_COUNT];
-  u16 ip;
-} CPU_State;
-
 typedef u8 Register_Kind;
 enum
 {
-  Register_AL = 0,
-  Register_CL,
-  Register_DL,
-  Register_BL,
-  Register_AH,
-  Register_CH,
-  Register_DH,
-  Register_BH,
-  Register_AX,
+  Register_AX = 0,
   Register_CX,
   Register_DX,
   Register_BX,
@@ -67,13 +55,32 @@ enum
   Register_SS,
   Register_DS,
 
-  REGISTER_COUNT
+  REGISTER_COUNT,
+
+  Register_AL = 16,
+  Register_CL,
+  Register_DL,
+  Register_BL,
+
+  Register_AH = 32,
+  Register_CH,
+  Register_DH,
+  Register_BH,
 };
 
 Register_Kind
 RegisterFromRegW(u8 reg, bool w)
 {
-  return (Register_Kind)(reg + (w ? 8 : 0));
+  Register_Kind result;
+
+  if (w) result = reg;
+  else
+  {
+    if (reg < 4) result = reg + 16;
+    else         result = reg + 32 - 4;
+  }
+
+  return result;
 }
 
 Register_Kind
@@ -253,7 +260,6 @@ typedef struct Instruction
   union
   {
     u8 reg;
-    u8 sr;
     u8 esc_source;
   };
   u8 rm;
@@ -421,9 +427,9 @@ Instruction_Details InstructionDetailsFromFirstByte[256] = {
   [0x89] = INSTRUCTION_DETAIL(Instruction_Mov,    InstructionFlag_W,                     InstructionOperandFormat_RMRM),
   [0x8A] = INSTRUCTION_DETAIL(Instruction_Mov,    InstructionFlag_D,                     InstructionOperandFormat_RMRM),
   [0x8B] = INSTRUCTION_DETAIL(Instruction_Mov,    InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_RMRM),
-  [0x8C] = INSTRUCTION_DETAIL(Instruction_Mov,    0,                                     InstructionOperandFormat_RMSegReg),
+  [0x8C] = INSTRUCTION_DETAIL(Instruction_Mov,    InstructionFlag_W,                     InstructionOperandFormat_RMSegReg),
   [0x8D] = INSTRUCTION_DETAIL(Instruction_Lea,    InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_RegMem),
-  [0x8E] = INSTRUCTION_DETAIL(Instruction_Mov,    InstructionFlag_D,                     InstructionOperandFormat_RMSegReg),
+  [0x8E] = INSTRUCTION_DETAIL(Instruction_Mov,    InstructionFlag_D | InstructionFlag_W, InstructionOperandFormat_RMSegReg),
   [0x8F] = INSTRUCTION_DETAIL(Instruction_Pop,    InstructionFlag_W,                     InstructionOperandFormat_RM),
 
   [0x90] = INSTRUCTION_DETAIL(Instruction_Xchg,   InstructionFlag_W,                     InstructionOperandFormat_AccReg),
@@ -780,6 +786,12 @@ DecodeInstruction(Memory* memory, u32* cursor)
 
   instruction.byte_size = *cursor - init_cursor;
 
+  bool w = !!(instruction.flags & InstructionFlag_W);
+  if (instruction.operand_format == InstructionOperandFormat_RegImmed) instruction.movreg = RegisterFromRegW(instruction.movreg, w);
+  if (instruction.operand_format == InstructionOperandFormat_RMSegReg) instruction.reg = RegisterFromSr(instruction.reg);
+  else                                                                 instruction.reg = RegisterFromRegW(instruction.reg, w);
+  if (instruction.mod == 3) instruction.rm = RegisterFromRegW(instruction.rm, w);
+
   return instruction;
 }
 
@@ -877,15 +889,7 @@ char* InstructionNames[INSTRUCTION_COUNT] = {
   [Instruction_Std]     = "std",
 };
 
-char* RegisterNames[REGISTER_COUNT] = {
-  [Register_AL] = "al",
-  [Register_CL] = "cl",
-  [Register_DL] = "dl",
-  [Register_BL] = "bl",
-  [Register_AH] = "ah",
-  [Register_CH] = "ch",
-  [Register_DH] = "dh",
-  [Register_BH] = "bh",
+char* RegisterNames[] = {
   [Register_AX] = "ax",
   [Register_CX] = "cx",
   [Register_DX] = "dx",
@@ -899,6 +903,16 @@ char* RegisterNames[REGISTER_COUNT] = {
   [Register_CS] = "cs",
   [Register_SS] = "ss",
   [Register_DS] = "ds",
+
+  [Register_AL] = "al",
+  [Register_CL] = "cl",
+  [Register_DL] = "dl",
+  [Register_BL] = "bl",
+
+  [Register_AH] = "ah",
+  [Register_CH] = "ch",
+  [Register_DH] = "dh",
+  [Register_BH] = "bh",
 };
 
 void
@@ -966,11 +980,11 @@ PrintInstruction(Instruction instruction, u32 address, FILE* file)
     case InstructionOperandFormat_RMSegReg:
     case InstructionOperandFormat_RegMem:
     {
-      char* reg_name = RegisterNames[instruction.operand_format == InstructionOperandFormat_RMSegReg ? RegisterFromSr(instruction.sr) : RegisterFromRegW(instruction.reg, w)];
+      char* reg_name = RegisterNames[instruction.reg];
 
       if (instruction.mod == 3)
       {
-        char* rm_reg_name = RegisterNames[RegisterFromRegW(instruction.rm, w)];
+        char* rm_reg_name = RegisterNames[instruction.rm];
         if (d) fprintf(file, " %s, %s", reg_name, rm_reg_name);
         else   fprintf(file, " %s, %s", rm_reg_name, reg_name);
       }
@@ -988,7 +1002,7 @@ PrintInstruction(Instruction instruction, u32 address, FILE* file)
 
     case InstructionOperandFormat_RMV:
     {
-      if (instruction.mod == 3) fprintf(file, " %s", RegisterNames[RegisterFromRegW(instruction.rm, w)]);
+      if (instruction.mod == 3) fprintf(file, " %s", RegisterNames[instruction.rm]);
       else
       {
         fprintf(file, " %s ", (w ? "word" : "byte"));
@@ -1000,7 +1014,7 @@ PrintInstruction(Instruction instruction, u32 address, FILE* file)
 
     case InstructionOperandFormat_RegImmed:
     {
-      fprintf(file, " %s, %u", RegisterNames[RegisterFromRegW(instruction.movreg, w)], instruction.data);
+      fprintf(file, " %s, %u", RegisterNames[instruction.movreg], instruction.data);
     } break;
 
     case InstructionOperandFormat_AccImmed:
@@ -1027,12 +1041,12 @@ PrintInstruction(Instruction instruction, u32 address, FILE* file)
     case InstructionOperandFormat_SS: fprintf(file, " %s", RegisterNames[Register_SS]); break;
     case InstructionOperandFormat_DS: fprintf(file, " %s", RegisterNames[Register_DS]); break;
 
-    case InstructionOperandFormat_Reg: fprintf(file, " %s", RegisterNames[RegisterFromRegW(instruction.reg, w)]); break;
+    case InstructionOperandFormat_Reg: fprintf(file, " %s", RegisterNames[instruction.reg]); break;
 
     case InstructionOperandFormat_AccReg:
     {
       char* acc_name = RegisterNames[w ? Register_AX : Register_AL];
-      char* aux_name = RegisterNames[RegisterFromRegW(instruction.reg, w)];
+      char* aux_name = RegisterNames[instruction.reg];
       if (d) fprintf(file, " %s, %s", aux_name, acc_name);
       else   fprintf(file, " %s, %s", acc_name, aux_name);
     } break;
@@ -1064,7 +1078,7 @@ PrintInstruction(Instruction instruction, u32 address, FILE* file)
 
     case InstructionOperandFormat_RMImmed:
     {
-      if (instruction.mod == 3) printf(" %s, %u", RegisterNames[RegisterFromRegW(instruction.rm, w)], instruction.data);
+      if (instruction.mod == 3) printf(" %s, %u", RegisterNames[instruction.rm], instruction.data);
       else
       {
         fprintf(file, " ");
@@ -1075,7 +1089,7 @@ PrintInstruction(Instruction instruction, u32 address, FILE* file)
 
     case InstructionOperandFormat_RM:
     {
-      if (instruction.mod == 3) fprintf(file, " %s", RegisterNames[RegisterFromRegW(instruction.rm, w)]);
+      if (instruction.mod == 3) fprintf(file, " %s", RegisterNames[instruction.rm]);
       else
       {
         fprintf(file, " %s ", (w ? "word" : "byte"));
@@ -1099,5 +1113,62 @@ PrintInstruction(Instruction instruction, u32 address, FILE* file)
     case InstructionOperandFormat_DstStrSrcStr: fprintf(file, "%c", (w ? 'w' : 'b')); break;
 
     case InstructionOperandFormat_OpcodeSource: break;
+  }
+}
+
+typedef struct CPU_State
+{
+  u16 register_file[REGISTER_COUNT];
+
+  Memory* memory;
+} CPU_State;
+
+void
+SetRegister(CPU_State* state, Register_Kind kind, u16 data)
+{
+  // TODO:
+  u16* reg = &state->register_file[kind & 0xF];
+
+  if      (kind < 16) *reg = data;
+  else if (kind < 32) *reg = (*reg & 0xFF00) | (data & 0xFF);
+  else                *reg = (*reg & 0x00FF) | (data << 8);
+}
+
+u16
+GetRegister(CPU_State* state, Register_Kind kind)
+{
+  // TODO:
+  u16 result;
+
+  u16* reg = &state->register_file[kind & 0xF];
+  if      (kind < 16) result = *reg;
+  else if (kind < 32) result = *reg & 0xFF;
+  else                result = *reg >> 8;
+
+  return result;
+}
+
+void
+ExecuteInstruction(CPU_State* state, Instruction instruction)
+{
+  if (instruction.kind == Instruction_Mov && instruction.operand_format == InstructionOperandFormat_RegImmed)
+  {
+    SetRegister(state, instruction.movreg, instruction.data);
+  }
+  else if (instruction.kind == Instruction_Mov && instruction.operand_format == InstructionOperandFormat_RMRM && instruction.mod == 3)
+  {
+    Register_Kind src = instruction.reg;
+    Register_Kind dst = instruction.rm;
+    if (instruction.flags & InstructionFlag_D) src ^= (dst ^= (src ^= dst));
+
+    SetRegister(state, dst, GetRegister(state, src));
+  }
+  else if (instruction.kind == Instruction_Mov && instruction.operand_format == InstructionOperandFormat_RMSegReg && instruction.mod == 3)
+  {
+    Register_Kind src = instruction.reg;
+    Register_Kind dst = instruction.rm;
+    if (instruction.flags & InstructionFlag_D) src ^= (dst ^= (src ^= dst));
+
+    SetRegister(state, dst, GetRegister(state, src));
   }
 }

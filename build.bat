@@ -21,6 +21,7 @@ set "link_options=%common_link_options% libucrtd.lib libvcruntimed.lib"
 if "%1" neq "" goto invalid_arguments
 
 cl %compile_options% ..\src\disassemble.c /link %link_options% /pdb:disassemble.pdb /out:disassemble.exe
+cl %compile_options% ..\src\execute.c /link %link_options% /pdb:execute.pdb /out:execute.exe
 
 goto end
 
