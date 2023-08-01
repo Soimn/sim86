@@ -12,6 +12,8 @@ typedef int32_t i32;
 typedef int64_t i64;
 
 typedef u8 bool;
+#define false 0
+#define true 1
 
 typedef u64 uint;
 
@@ -1116,9 +1118,48 @@ PrintInstruction(Instruction instruction, u32 address, FILE* file)
   }
 }
 
+typedef enum Flag
+{
+  CF = 0,
+  PF,
+  AF,
+  ZF,
+  SF,
+  TF,
+  IF,
+  DF,
+  OF,
+  FLAG_COUNT
+} Flag;
+
+u16 FlagBitIdx[FLAG_COUNT] = {
+  [CF] = 0,
+  [PF] = 2,
+  [AF] = 4,
+  [ZF] = 6,
+  [SF] = 7,
+  [TF] = 8,
+  [IF] = 9,
+  [DF] = 10,
+  [OF] = 11,
+};
+
+char FlagNames[FLAG_COUNT] = {
+  [CF] = 'C',
+  [PF] = 'P',
+  [AF] = 'A',
+  [ZF] = 'Z',
+  [SF] = 'S',
+  [TF] = 'T',
+  [IF] = 'I',
+  [DF] = 'D',
+  [OF] = 'O',
+};
+
 typedef struct CPU_State
 {
   u16 register_file[REGISTER_COUNT];
+  u16 flags;
 
   Memory* memory;
 } CPU_State;
@@ -1149,26 +1190,88 @@ GetRegister(CPU_State* state, Register_Kind kind)
 }
 
 void
+SetFlag(CPU_State* state, Flag flag, bool value)
+{
+  u16 flag_bit = FlagBitIdx[flag];
+  state->flags = (state->flags & ~(u16)(1 << flag_bit)) | ((u16)value << flag_bit);
+}
+
+bool
+GetFlag(CPU_State* state, Flag flag)
+{
+  u16 flag_bit = FlagBitIdx[flag];
+  return ((state->flags & (1 << flag_bit)) != 0);
+}
+
+void
 ExecuteInstruction(CPU_State* state, Instruction instruction)
 {
-  if (instruction.kind == Instruction_Mov && instruction.operand_format == InstructionOperandFormat_RegImmed)
+  if (instruction.kind == Instruction_Mov)
   {
-    SetRegister(state, instruction.movreg, instruction.data);
-  }
-  else if (instruction.kind == Instruction_Mov && instruction.operand_format == InstructionOperandFormat_RMRM && instruction.mod == 3)
-  {
-    Register_Kind src = instruction.reg;
-    Register_Kind dst = instruction.rm;
-    if (instruction.flags & InstructionFlag_D) src ^= (dst ^= (src ^= dst));
+    if (instruction.operand_format == InstructionOperandFormat_RegImmed)
+    {
+      SetRegister(state, instruction.movreg, instruction.data);
+    }
+    else if (instruction.operand_format == InstructionOperandFormat_RMRM && instruction.mod == 3)
+    {
+      Register_Kind src = instruction.reg;
+      Register_Kind dst = instruction.rm;
+      if (instruction.flags & InstructionFlag_D) src ^= (dst ^= (src ^= dst));
 
-    SetRegister(state, dst, GetRegister(state, src));
-  }
-  else if (instruction.kind == Instruction_Mov && instruction.operand_format == InstructionOperandFormat_RMSegReg && instruction.mod == 3)
-  {
-    Register_Kind src = instruction.reg;
-    Register_Kind dst = instruction.rm;
-    if (instruction.flags & InstructionFlag_D) src ^= (dst ^= (src ^= dst));
+      SetRegister(state, dst, GetRegister(state, src));
+    }
+    else if (instruction.operand_format == InstructionOperandFormat_RMSegReg && instruction.mod == 3)
+    {
+      Register_Kind src = instruction.reg;
+      Register_Kind dst = instruction.rm;
+      if (instruction.flags & InstructionFlag_D) src ^= (dst ^= (src ^= dst));
 
-    SetRegister(state, dst, GetRegister(state, src));
+      SetRegister(state, dst, GetRegister(state, src));
+    }
+  }
+  else if (instruction.kind == Instruction_Add || instruction.kind == Instruction_Sub || instruction.kind == Instruction_Cmp)
+  {
+    u16 src_val;
+    u16 dst_val;
+    u16 result;
+    if (instruction.operand_format == InstructionOperandFormat_RMRM && instruction.mod == 3)
+    {
+      Register_Kind src = instruction.reg;
+      Register_Kind dst = instruction.rm;
+      if (instruction.flags & InstructionFlag_D) src ^= (dst ^= (src ^= dst));
+
+      src_val = GetRegister(state, src);
+      dst_val = GetRegister(state, dst);
+
+      src_val = (instruction.kind == Instruction_Add ? src_val : -src_val);
+      result = src_val + dst_val;
+
+      if (instruction.kind != Instruction_Cmp) SetRegister(state, dst, result);
+    }
+    else if (instruction.operand_format == InstructionOperandFormat_RMImmed && instruction.mod == 3)
+    {
+      Register_Kind dst = instruction.rm;
+
+      src_val = instruction.data;
+      dst_val = GetRegister(state, dst);
+
+      src_val = (instruction.kind == Instruction_Add ? src_val : -src_val);
+      result = src_val + dst_val;
+
+      if (instruction.kind != Instruction_Cmp) SetRegister(state, dst, result);
+    }
+
+    uint parity = 0;
+    for (uint i = 0; i < 8; ++i) parity += !!((result&0xFF) & (1 << i));
+
+    bool carry     = ((uint)src_val + (uint)dst_val > (uint)result);
+    bool aux_carry = ((uint)(src_val&0xF) + (uint)(dst_val&0xF) > 0xF);
+
+    SetFlag(state, CF, (instruction.kind == Instruction_Add ? carry : !carry));
+    SetFlag(state, PF, (parity % 2 == 0));
+    SetFlag(state, AF, (instruction.kind == Instruction_Add ? aux_carry : !aux_carry));
+    SetFlag(state, ZF, (result == 0));
+    SetFlag(state, SF, ((i16)result < 0));
+    SetFlag(state, OF, ((i16)(src_val ^ dst_val) >= 0 && (i16)(dst_val ^ result) < 0));
   }
 }

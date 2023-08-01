@@ -37,6 +37,9 @@ main(int argc, char** argv)
           ExecuteInstruction(&cpu_state, instruction);
 
           PrintInstruction(instruction, address, stdout);
+
+          bool has_printed_intro = false;
+
           for (Register_Kind i = Register_AX; i < REGISTER_COUNT; ++i)
           {
             u16 old = GetRegister(&prev_state, i);
@@ -45,23 +48,31 @@ main(int argc, char** argv)
             if (old == new) continue;
             else
             {
-              if (i <= Register_BX)
+              if (!has_printed_intro)
               {
-                if (old >> 8 == new >> 8)
-                {
-                  old &= 0xFF;
-                  new &= 0xFF;
-                }
-                else if ((old & 0xFF) == (new & 0xFF))
-                {
-                  old >>= 8;
-                  new >>= 8;
-                }
+                printf(" ; ");
+                has_printed_intro = true;
               }
 
-              printf(" ; %s:0x%X->0x%X ", RegisterNames[i], old, new);
+              printf("%s:0x%x->0x%x ", RegisterNames[i], old, new);
             }
           }
+
+          if (prev_state.flags != cpu_state.flags)
+          {
+            if (!has_printed_intro)
+            {
+              printf(" ; ");
+              has_printed_intro = true;
+            }
+
+            printf("flags:");
+            for (uint i = 0; i < FLAG_COUNT; ++i) if (GetFlag(&prev_state, i)) printf("%c", FlagNames[i]);
+            printf("->");
+            for (uint i = 0; i < FLAG_COUNT; ++i) if (GetFlag(&cpu_state, i)) printf("%c", FlagNames[i]);
+            printf(" ");
+          }
+
           printf("\n");
         }
 
@@ -76,6 +87,7 @@ main(int argc, char** argv)
           Register_SI,
           Register_DI,
 
+          Register_CS,
           Register_ES,
           Register_SS,
           Register_DS,
@@ -83,7 +95,19 @@ main(int argc, char** argv)
         for (uint i = 0; i < sizeof(print_registers)/sizeof(0[print_registers]); ++i)
         {
           Register_Kind reg_kind = print_registers[i];
-          printf("      %s: 0x%04X (%u)\n", RegisterNames[reg_kind], cpu_state.register_file[reg_kind], cpu_state.register_file[reg_kind]);
+          if (cpu_state.register_file[reg_kind] != 0)
+          {
+            printf("      %s: 0x%04x (%u)\n", RegisterNames[reg_kind], cpu_state.register_file[reg_kind], cpu_state.register_file[reg_kind]);
+          }
+        }
+
+        if (cpu_state.flags != 0)
+        {
+          printf("   flags: ");
+
+          for (uint i = 0; i < FLAG_COUNT; ++i) if (GetFlag(&cpu_state, i)) printf("%c", FlagNames[i]);
+
+          printf("\n");
         }
       }
 
