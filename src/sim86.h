@@ -34,14 +34,26 @@ ReadByte(Memory* memory, u32 address)
   return memory->mem[address & MEMORY_MASK];
 }
 
+void
+WriteByte(Memory* memory, u32 address, u8 byte)
+{
+  memory->mem[address & MEMORY_MASK] = byte;
+}
+
 u16
 ReadWord(Memory* memory, u32 address)
 {
   return ((u16)ReadByte(memory, address + 1) << 8) | ReadByte(memory, address);
 }
 
-typedef u8 Register_Kind;
-enum
+void
+WriteWord(Memory* memory, u32 address, u16 word)
+{
+  memory->mem[address     & MEMORY_MASK] = word & 0xFF;
+  memory->mem[(address+1) & MEMORY_MASK] = word >> 8;
+}
+
+typedef enum Register_Kind
 {
   Register_AX = 0,
   Register_CX,
@@ -68,7 +80,7 @@ enum
   Register_CH,
   Register_DH,
   Register_BH,
-};
+} Register_Kind;
 
 Register_Kind
 RegisterFromRegW(u8 reg, bool w)
@@ -91,8 +103,7 @@ RegisterFromSr(u8 sr)
   return Register_ES + sr;
 }
 
-typedef u8 Instruction_Kind;
-enum
+typedef enum Instruction_Kind
 {
   Instruction_Add = 1,
   Instruction_Push,
@@ -186,10 +197,9 @@ enum
   Instruction_Cld,
   Instruction_Std,
   INSTRUCTION_COUNT
-};
+} Instruction_Kind;
 
-typedef u8 Instruction_Prefix;
-enum
+typedef enum Instruction_Prefix
 {
   InstructionPrefix_Lock  = (1 << 0),
   InstructionPrefix_SegES = (1 << 1),
@@ -198,20 +208,18 @@ enum
   InstructionPrefix_SegDS = (1 << 4),
   InstructionPrefix_RepNZ = (1 << 5),
   InstructionPrefix_RepZ  = (1 << 6),
-};
+} Instruction_Prefix;
 
-typedef u8 Instruction_Flags;
-enum
+typedef enum Instruction_Flag
 {
   InstructionFlag_W = (1 << 0),
   InstructionFlag_S = (1 << 1),
   InstructionFlag_D = (1 << 2),
   InstructionFlag_V = (1 << 3),
   InstructionFlag_Z = (1 << 4),
-};
+} Instruction_Flag;
 
-typedef u8 Instruction_Operand_Format;
-enum
+typedef enum Instruction_Operand_Format
 {
   // NOTE: Do not move these, the order is used in DecodeInstruction.
   //       Look for ">= InstructionOperandFormat_"
@@ -244,13 +252,13 @@ enum
 
   InstructionOperandFormat_InOutImmed,
   InstructionOperandFormat_InOutReg,
-};
+} Instruction_Operand_Format;
 
 typedef struct Instruction
 {
   Instruction_Kind kind;
   Instruction_Prefix prefix;
-  Instruction_Flags flags;
+  Instruction_Flag flags;
   Instruction_Operand_Format operand_format;
   u8 byte_size;
   union
@@ -276,7 +284,7 @@ typedef struct Instruction
 typedef struct Instruction_Details
 {
   Instruction_Kind kind;
-  Instruction_Flags flags;
+  Instruction_Flag flags;
   Instruction_Operand_Format operand_format;
 } Instruction_Details;
 
@@ -923,10 +931,10 @@ PrintInstruction__PrintMemoryRef(Instruction_Prefix prefix, u8 mod, u8 rm, bool 
   ASSERT(mod != 3);
 
   char* effective_address_patterns[8] = {
-    "bx + si",
-    "bx + di",
-    "bp + si",
-    "bp + di",
+    "bx+si",
+    "bx+di",
+    "bp+si",
+    "bp+di",
     "si",
     "di",
     "bp",
@@ -942,10 +950,14 @@ PrintInstruction__PrintMemoryRef(Instruction_Prefix prefix, u8 mod, u8 rm, bool 
 
   if (mod == 0)
   {
-    if (rm == 6) fprintf(file, "%u", disp);
+    if (rm == 6) fprintf(file, "%+d", disp);
     else         fprintf(file, "%s", effective_address_patterns[rm]);
   }
-  else fprintf(file, "%s%+d", effective_address_patterns[rm], (mod == 1 ? (int)(i8)disp : (int)(i16)disp));
+  else
+  {
+    if (rm == 6 && disp == 0) fprintf(file, "%s", effective_address_patterns[rm]);
+    else                      fprintf(file, "%s%+d", effective_address_patterns[rm], (mod == 1 ? (int)(i8)disp : (int)(i16)disp));
+  }
 
   fprintf(file, "]");
 }
@@ -983,6 +995,8 @@ PrintInstruction(Instruction instruction, u32 address, FILE* file)
     case InstructionOperandFormat_RegMem:
     {
       char* reg_name = RegisterNames[instruction.reg];
+
+      if (instruction.operand_format == InstructionOperandFormat_RMRM && instruction.mod != 3 && !d) printf(" %s", (w ? "word" : "byte"));
 
       if (instruction.mod == 3)
       {
@@ -1083,9 +1097,9 @@ PrintInstruction(Instruction instruction, u32 address, FILE* file)
       if (instruction.mod == 3) printf(" %s, %u", RegisterNames[instruction.rm], instruction.data);
       else
       {
-        fprintf(file, " ");
+        fprintf(file, " %s ", (w ? "word" : "byte"));
         PrintInstruction__PrintMemoryRef(instruction.prefix, instruction.mod, instruction.rm, w, instruction.disp, file);
-        fprintf(file, ", %s %u", (w ? "word" : "byte"), instruction.data);
+        fprintf(file, ", %u", instruction.data);
       }
     } break;
 
@@ -1161,6 +1175,10 @@ typedef struct CPU_State
   u16 register_file[REGISTER_COUNT];
   u16 flags;
   u32 ip;
+  u16 es;
+  u16 cs;
+  u16 ds;
+  u16 ss;
 
   Memory* memory;
 } CPU_State;
@@ -1204,6 +1222,33 @@ GetFlag(CPU_State* state, Flag flag)
   return ((state->flags & (1 << flag_bit)) != 0);
 }
 
+u32
+EffectiveAddress(CPU_State* state, Instruction_Prefix prefix, u8 mod, u8 rm, u16 disp)
+{
+  u32 address = 0;
+  if      (prefix & InstructionPrefix_SegES) address = (u32)state->es << 4;
+  else if (prefix & InstructionPrefix_SegCS) address = (u32)state->cs << 4;
+  else if (prefix & InstructionPrefix_SegDS) address = (u32)state->ds << 4;
+  else if (prefix & InstructionPrefix_SegSS) address = (u32)state->ss << 4;
+
+  switch (rm)
+  {
+    case 0: address = (u32)GetRegister(state, Register_BX) + (u32)GetRegister(state, Register_SI); break;
+    case 1: address = (u32)GetRegister(state, Register_BX) + (u32)GetRegister(state, Register_DI); break;
+    case 2: address = (u32)GetRegister(state, Register_BP) + (u32)GetRegister(state, Register_SI); break;
+    case 3: address = (u32)GetRegister(state, Register_BP) + (u32)GetRegister(state, Register_DI); break;
+    case 4: address = (u32)GetRegister(state, Register_SI);                                        break;
+    case 5: address = (u32)GetRegister(state, Register_DI);                                        break;
+    case 6: address = (u32)GetRegister(state, Register_BP);                                        break;
+    case 7: address = (u32)GetRegister(state, Register_BX);                                        break;
+  }
+
+  if (mod == 0 && rm == 6) address  = disp;
+  else                     address += (i16)disp;
+
+  return address;
+}
+
 void
 ExecuteInstruction(CPU_State* state, Instruction instruction)
 {
@@ -1229,25 +1274,83 @@ ExecuteInstruction(CPU_State* state, Instruction instruction)
 
       SetRegister(state, dst, GetRegister(state, src));
     }
+    else if (instruction.operand_format == InstructionOperandFormat_RMRM && instruction.mod != 3)
+    {
+      u32 address = EffectiveAddress(state, instruction.prefix, instruction.mod, instruction.rm, instruction.disp);
+      
+      if (instruction.flags & InstructionFlag_W)
+      {
+        if (instruction.flags & InstructionFlag_D) SetRegister(state, instruction.reg, ReadWord(state->memory, address));
+        else                                       WriteWord(state->memory, address, GetRegister(state, instruction.reg));
+      }
+      else
+      {
+        if (instruction.flags & InstructionFlag_D) SetRegister(state, instruction.reg, ReadByte(state->memory, address));
+        else                                       WriteByte(state->memory, address, (u8)GetRegister(state, instruction.reg));
+      }
+    }
+    else if (instruction.operand_format == InstructionOperandFormat_RMImmed)
+    {
+      if (instruction.mod == 3) SetRegister(state, instruction.rm, instruction.data);
+      else
+      {
+        u32 address = EffectiveAddress(state, instruction.prefix, instruction.mod, instruction.rm, instruction.disp);
+        if (instruction.flags & InstructionFlag_W) WriteWord(state->memory, address, instruction.data);
+        else                                       WriteByte(state->memory, address, (u8)instruction.data);
+      }
+    }
   }
   else if (instruction.kind == Instruction_Add || instruction.kind == Instruction_Sub || instruction.kind == Instruction_Cmp)
   {
     u16 src_val;
     u16 dst_val;
     u16 result;
-    if (instruction.operand_format == InstructionOperandFormat_RMRM && instruction.mod == 3)
+    if (instruction.operand_format == InstructionOperandFormat_RMRM)
     {
-      Register_Kind src = instruction.reg;
-      Register_Kind dst = instruction.rm;
-      if (instruction.flags & InstructionFlag_D) src ^= (dst ^= (src ^= dst));
+      bool w = !!(instruction.flags & InstructionFlag_W);
+      bool d = !!(instruction.flags & InstructionFlag_D);
 
-      src_val = GetRegister(state, src);
-      dst_val = GetRegister(state, dst);
+      if (instruction.mod == 3)
+      {
+        Register_Kind src_reg = instruction.reg;
+        Register_Kind dst_reg = instruction.rm;
 
-      src_val = (instruction.kind == Instruction_Add ? src_val : -src_val);
-      result = src_val + dst_val;
+        if (d) src_reg ^= (dst_reg ^= (src_reg ^= dst_reg));
 
-      if (instruction.kind != Instruction_Cmp) SetRegister(state, dst, result);
+        src_val = GetRegister(state, src_reg);
+        dst_val = GetRegister(state, dst_reg);
+
+        src_val = (instruction.kind == Instruction_Add ? src_val : -src_val);
+        result = src_val + dst_val;
+
+        if (instruction.kind != Instruction_Cmp) SetRegister(state, dst_reg, result);
+      }
+      else
+      {
+        Register_Kind reg = instruction.reg;
+        u32 address = EffectiveAddress(state, instruction.prefix, instruction.mod, instruction.rm, instruction.disp);
+
+        u16 reg_val = GetRegister(state, reg);
+        u16 mem_val;
+        if (w) mem_val = ReadWord(state->memory, address);
+        else   mem_val = ReadByte(state->memory, address);
+
+        if (d) src_val = mem_val, dst_val = reg_val;
+        else   src_val = reg_val, dst_val = mem_val;
+
+        src_val = (instruction.kind == Instruction_Add ? src_val : -src_val);
+        result = src_val + dst_val;
+
+        if (instruction.kind != Instruction_Cmp)
+        {
+          if (d) SetRegister(state, reg, result);
+          else
+          {
+            if (w) WriteWord(state->memory, address, result);
+            else   WriteByte(state->memory, address, (u8)result);
+          }
+        }
+      }
     }
     else if (instruction.operand_format == InstructionOperandFormat_RMImmed && instruction.mod == 3)
     {
@@ -1261,6 +1364,7 @@ ExecuteInstruction(CPU_State* state, Instruction instruction)
 
       if (instruction.kind != Instruction_Cmp) SetRegister(state, dst, result);
     }
+    else NOT_IMPLEMENTED;
 
     uint parity = 0;
     for (uint i = 0; i < 8; ++i) parity += !!((result&0xFF) & (1 << i));

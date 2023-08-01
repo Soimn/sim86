@@ -124,6 +124,12 @@ main(int argc, char** argv)
 
           printf("\n");
         }
+
+#if 1
+        FILE* im = fopen("image_out.data", "wb");
+        fwrite(cpu_state.memory->mem, 1, 64*4 + 64*64*4, im);
+        fclose(im);
+#endif
       }
 
       fclose(file);
