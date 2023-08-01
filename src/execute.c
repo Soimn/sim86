@@ -25,18 +25,19 @@ main(int argc, char** argv)
       else
       {
         CPU_State cpu_state = {
-          .memory = memory,
+          .register_file = {0},
+          .flags         = 0,
+          .ip            = 0,
+          .memory        = memory,
         };
 
-        for (u32 cursor = 0; cursor < file_size; )
+        while (cpu_state.ip < file_size)
         {
-          u32 address = cursor;
-          Instruction instruction = DecodeInstruction(memory, &cursor);
-
           CPU_State prev_state = cpu_state;
+          Instruction instruction = DecodeInstruction(memory, &cpu_state.ip);
           ExecuteInstruction(&cpu_state, instruction);
 
-          PrintInstruction(instruction, address, stdout);
+          PrintInstruction(instruction, prev_state.ip, stdout);
 
           bool has_printed_intro = false;
 
@@ -57,6 +58,16 @@ main(int argc, char** argv)
               printf("%s:0x%x->0x%x ", RegisterNames[i], old, new);
             }
           }
+
+#define DISPLAY_IP 1
+#if DISPLAY_IP
+          if (!has_printed_intro)
+          {
+            printf(" ; ");
+            has_printed_intro = true;
+          }
+          printf("ip:0x%x->0x%x ", prev_state.ip, cpu_state.ip);
+#endif
 
           if (prev_state.flags != cpu_state.flags)
           {
@@ -100,6 +111,10 @@ main(int argc, char** argv)
             printf("      %s: 0x%04x (%u)\n", RegisterNames[reg_kind], cpu_state.register_file[reg_kind], cpu_state.register_file[reg_kind]);
           }
         }
+
+#if DISPLAY_IP
+        printf("      ip: 0x%04x (%u)\n", cpu_state.ip, cpu_state.ip);
+#endif
 
         if (cpu_state.flags != 0)
         {

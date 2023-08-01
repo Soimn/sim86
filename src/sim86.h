@@ -1160,6 +1160,7 @@ typedef struct CPU_State
 {
   u16 register_file[REGISTER_COUNT];
   u16 flags;
+  u32 ip;
 
   Memory* memory;
 } CPU_State;
@@ -1265,13 +1266,61 @@ ExecuteInstruction(CPU_State* state, Instruction instruction)
     for (uint i = 0; i < 8; ++i) parity += !!((result&0xFF) & (1 << i));
 
     bool carry     = ((uint)src_val + (uint)dst_val > (uint)result);
-    bool aux_carry = ((uint)(src_val&0xF) + (uint)(dst_val&0xF) > 0xF);
+    bool aux_carry = (instruction.kind == Instruction_Add ? (uint)(src_val&0xF) + (uint)(dst_val&0xF) > 0xF : (uint)((~src_val+1)&0xF) > (dst_val&0xF));
 
     SetFlag(state, CF, (instruction.kind == Instruction_Add ? carry : !carry));
     SetFlag(state, PF, (parity % 2 == 0));
-    SetFlag(state, AF, (instruction.kind == Instruction_Add ? aux_carry : !aux_carry));
+    SetFlag(state, AF, (aux_carry));
     SetFlag(state, ZF, (result == 0));
     SetFlag(state, SF, ((i16)result < 0));
     SetFlag(state, OF, ((i16)(src_val ^ dst_val) >= 0 && (i16)(dst_val ^ result) < 0));
+  }
+  else if (instruction.kind == Instruction_Je  || instruction.kind == Instruction_Jl  ||
+           instruction.kind == Instruction_Jle || instruction.kind == Instruction_Jb  ||
+           instruction.kind == Instruction_Jbe || instruction.kind == Instruction_Jp  ||
+           instruction.kind == Instruction_Jo  || instruction.kind == Instruction_Js  ||
+           instruction.kind == Instruction_Jne || instruction.kind == Instruction_Jge ||
+           instruction.kind == Instruction_Jg  || instruction.kind == Instruction_Jae ||
+           instruction.kind == Instruction_Ja  || instruction.kind == Instruction_Jnp ||
+           instruction.kind == Instruction_Jno || instruction.kind == Instruction_Jns)
+  {
+    bool should_jump = false;
+    switch (instruction.kind)
+    {
+      case Instruction_Je:  should_jump = GetFlag(state, ZF);                                                break;
+      case Instruction_Jl:  should_jump = (GetFlag(state, SF) != GetFlag(state, OF));                        break;
+      case Instruction_Jle: should_jump = (GetFlag(state, SF) != GetFlag(state, OF) || GetFlag(state, ZF));  break;
+      case Instruction_Jb:  should_jump = GetFlag(state, CF);                                                break;
+      case Instruction_Jbe: should_jump = (GetFlag(state, CF) || GetFlag(state, ZF));                        break;
+      case Instruction_Jp:  should_jump = GetFlag(state, PF);                                                break;
+      case Instruction_Jo:  should_jump = GetFlag(state, OF);                                                break;
+      case Instruction_Js:  should_jump = GetFlag(state, SF);                                                break;
+      case Instruction_Jne: should_jump = !GetFlag(state, ZF);                                               break;
+      case Instruction_Jge: should_jump = (GetFlag(state, SF) == GetFlag(state, OF));                        break;
+      case Instruction_Jg:  should_jump = (GetFlag(state, SF) == GetFlag(state, OF) && !GetFlag(state, ZF)); break;
+      case Instruction_Jae: should_jump = !GetFlag(state, CF);                                               break;
+      case Instruction_Ja:  should_jump = (!GetFlag(state, CF) && !GetFlag(state, ZF));                      break;
+      case Instruction_Jnp: should_jump = !GetFlag(state, PF);                                               break;
+      case Instruction_Jno: should_jump = !GetFlag(state, OF);                                               break;
+      case Instruction_Jns: should_jump = !GetFlag(state, SF);                                               break;
+    }
+
+    if (should_jump) state->ip += (i16)instruction.disp;
+  }
+  else if (instruction.kind == Instruction_Loop || instruction.kind == Instruction_Loopz ||
+           instruction.kind == Instruction_Loopnz)
+  {
+    u16 cx = GetRegister(state, Register_CX) - 1;
+    SetRegister(state, Register_CX, cx);
+
+    bool should_jump = false;
+    switch (instruction.kind)
+    {
+      case Instruction_Loop:   should_jump = (cx != 0);                        break;
+      case Instruction_Loopz:  should_jump = (cx != 0 &&  GetFlag(state, ZF)); break;
+      case Instruction_Loopnz: should_jump = (cx != 0 && !GetFlag(state, ZF)); break;
+    }
+
+    if (should_jump) state->ip += (i16)instruction.disp;
   }
 }
