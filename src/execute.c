@@ -17,7 +17,7 @@ main(int argc, char** argv)
       u64 file_size = ftell(file);
       rewind(file);
 
-      Memory* memory = malloc(sizeof(Memory));
+      Memory* memory = calloc(1, sizeof(Memory));
 
 
       if      (file_size > sizeof(Memory))                                    fprintf(stderr, "Input binary is too large\n");
@@ -125,7 +125,7 @@ main(int argc, char** argv)
           printf("\n");
         }
 
-#if 1
+#if 0
         FILE* im = fopen("image_out.data", "wb");
         fwrite(cpu_state.memory->mem, 1, 64*4 + 64*64*4, im);
         fclose(im);

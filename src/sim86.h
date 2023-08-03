@@ -1252,6 +1252,9 @@ EffectiveAddress(CPU_State* state, Instruction_Prefix prefix, u8 mod, u8 rm, u16
 void
 ExecuteInstruction(CPU_State* state, Instruction instruction)
 {
+  bool w = !!(instruction.flags & InstructionFlag_W);
+  bool d = !!(instruction.flags & InstructionFlag_D);
+
   if (instruction.kind == Instruction_Mov)
   {
     if (instruction.operand_format == InstructionOperandFormat_RegImmed)
@@ -1262,7 +1265,7 @@ ExecuteInstruction(CPU_State* state, Instruction instruction)
     {
       Register_Kind src = instruction.reg;
       Register_Kind dst = instruction.rm;
-      if (instruction.flags & InstructionFlag_D) src ^= (dst ^= (src ^= dst));
+      if (d) src ^= (dst ^= (src ^= dst));
 
       SetRegister(state, dst, GetRegister(state, src));
     }
@@ -1270,7 +1273,7 @@ ExecuteInstruction(CPU_State* state, Instruction instruction)
     {
       Register_Kind src = instruction.reg;
       Register_Kind dst = instruction.rm;
-      if (instruction.flags & InstructionFlag_D) src ^= (dst ^= (src ^= dst));
+      if (d) src ^= (dst ^= (src ^= dst));
 
       SetRegister(state, dst, GetRegister(state, src));
     }
@@ -1278,15 +1281,15 @@ ExecuteInstruction(CPU_State* state, Instruction instruction)
     {
       u32 address = EffectiveAddress(state, instruction.prefix, instruction.mod, instruction.rm, instruction.disp);
       
-      if (instruction.flags & InstructionFlag_W)
+      if (w)
       {
-        if (instruction.flags & InstructionFlag_D) SetRegister(state, instruction.reg, ReadWord(state->memory, address));
-        else                                       WriteWord(state->memory, address, GetRegister(state, instruction.reg));
+        if (d) SetRegister(state, instruction.reg, ReadWord(state->memory, address));
+        else   WriteWord(state->memory, address, GetRegister(state, instruction.reg));
       }
       else
       {
-        if (instruction.flags & InstructionFlag_D) SetRegister(state, instruction.reg, ReadByte(state->memory, address));
-        else                                       WriteByte(state->memory, address, (u8)GetRegister(state, instruction.reg));
+        if (d) SetRegister(state, instruction.reg, ReadByte(state->memory, address));
+        else   WriteByte(state->memory, address, (u8)GetRegister(state, instruction.reg));
       }
     }
     else if (instruction.operand_format == InstructionOperandFormat_RMImmed)
@@ -1295,8 +1298,8 @@ ExecuteInstruction(CPU_State* state, Instruction instruction)
       else
       {
         u32 address = EffectiveAddress(state, instruction.prefix, instruction.mod, instruction.rm, instruction.disp);
-        if (instruction.flags & InstructionFlag_W) WriteWord(state->memory, address, instruction.data);
-        else                                       WriteByte(state->memory, address, (u8)instruction.data);
+        if (w) WriteWord(state->memory, address, instruction.data);
+        else   WriteByte(state->memory, address, (u8)instruction.data);
       }
     }
   }
@@ -1307,9 +1310,6 @@ ExecuteInstruction(CPU_State* state, Instruction instruction)
     u16 result;
     if (instruction.operand_format == InstructionOperandFormat_RMRM)
     {
-      bool w = !!(instruction.flags & InstructionFlag_W);
-      bool d = !!(instruction.flags & InstructionFlag_D);
-
       if (instruction.mod == 3)
       {
         Register_Kind src_reg = instruction.reg;
@@ -1352,17 +1352,36 @@ ExecuteInstruction(CPU_State* state, Instruction instruction)
         }
       }
     }
-    else if (instruction.operand_format == InstructionOperandFormat_RMImmed && instruction.mod == 3)
+    else if (instruction.operand_format == InstructionOperandFormat_RMImmed)
     {
-      Register_Kind dst = instruction.rm;
+      if (instruction.mod == 3)
+      {
+        Register_Kind dst = instruction.rm;
 
-      src_val = instruction.data;
-      dst_val = GetRegister(state, dst);
+        src_val = instruction.data;
+        dst_val = GetRegister(state, dst);
 
-      src_val = (instruction.kind == Instruction_Add ? src_val : -src_val);
-      result = src_val + dst_val;
+        src_val = (instruction.kind == Instruction_Add ? src_val : -src_val);
+        result = src_val + dst_val;
 
-      if (instruction.kind != Instruction_Cmp) SetRegister(state, dst, result);
+        if (instruction.kind != Instruction_Cmp) SetRegister(state, dst, result);
+      }
+      else
+      {
+        u32 address = EffectiveAddress(state, instruction.prefix, instruction.mod, instruction.rm, instruction.disp);
+
+        src_val = instruction.data;
+        dst_val = (w ? ReadWord(state->memory, address) : ReadByte(state->memory, address));
+
+        src_val = (instruction.kind == Instruction_Add ? src_val : -src_val);
+        result = src_val + dst_val;
+
+        if (instruction.kind != Instruction_Cmp)
+        {
+          if (w) WriteWord(state->memory, address, result);
+          else   WriteByte(state->memory, address, (u8)result);
+        }
+      }
     }
     else NOT_IMPLEMENTED;
 
